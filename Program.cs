@@ -8,10 +8,10 @@
     using System.Runtime.CompilerServices;
     using System.Text;
 
-    internal class Program
+    public class Program
     {
         private const int bufferSize = 2048;
-        private const int _PORT = 9399;
+        private const int _PORT = 443;
         private static Socket _serverSocket;
         private static readonly List<Client> clients = new List<Client>();
         private static readonly List<ChatRoom> chatRooms = new List<ChatRoom>();
@@ -25,11 +25,14 @@
             CloseAllSockets();
         }
 
-        private static void SetupServer()
+        public static void SetupServer()
         {
             Console.WriteLine("Setting up server...");
+
             _serverSocket = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-            _serverSocket.Bind(new IPEndPoint(IPAddress.Any, _PORT));
+
+            IPEndPoint endPoint = new IPEndPoint(IPAddress.Any, _PORT);
+            _serverSocket.Bind(endPoint);
             _serverSocket.Listen(5);
             _serverSocket.BeginAccept(AcceptCallback, null);
             chatRooms.Add(new ChatRoom("chat"));
@@ -41,7 +44,7 @@
         ///     Close all connected client (we do not need to shutdown the server socket as its connections
         ///     are already closed with the clients)
         /// </summary>
-        private static void CloseAllSockets()
+        public static void CloseAllSockets()
         {
             foreach (Socket socket in clients.Select(c => c.Socket))
             {
