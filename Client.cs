@@ -63,5 +63,10 @@ namespace MattsChat
         {
             this.chatRoomUniqueId = chatroomUniqueId;
         }
+
+        public void LeaveChatroom()
+        {
+            this.chatRoomUniqueId = Guid.Empty;
+        }
     }
 }

@@ -55,6 +55,23 @@
             _serverSocket.Close();
         }
 
+        private static void CloseClientConnection(Client client)
+        {
+            lock (client.Socket)
+            {
+                ChatRoom chatRoom = chatRooms.FirstOrDefault(cr => cr.UniqueId == client.chatRoomUniqueId);
+                if (chatRoom != null)
+                {
+                    chatRoom.ClientLeave(client);
+                }
+                clients.Remove(client);
+
+                // Always Shutdown before closing
+                client.Socket.Shutdown(SocketShutdown.Both);
+                client.Socket.Close();
+            }
+        }
+
         private static void AcceptCallback(IAsyncResult AR)
         {
             Socket newSocket;
@@ -70,8 +87,7 @@
 
             clients.Add(new Client(newSocket));
 
-            byte[] data = Encoding.ASCII.GetBytes("<= Welcome to the XYZ chat server\r\n");
-            newSocket.Send(data);
+            newSocket.Send(OutboundMessageBuilder.WelcomeMessage().ToBytes());
 
             PromptForNickName(newSocket);
 
@@ -89,7 +105,16 @@
         private static void ReceiveCallback(IAsyncResult AR)
         {
             var current = (Socket)AR.AsyncState;
-            Client client = clients.First(c => c.Socket.Equals(current));
+            Client client = clients.FirstOrDefault(c => c.Socket.Equals(current));
+
+            if (client == null)
+            {
+                //Callback run but no data, close the connection
+                //supposadly means a disconnect
+                //and we still have to close the socket, even though we throw the event later
+                current.Close();
+                return;
+            }
 
             try
             {
@@ -102,36 +127,28 @@
                     var recBuf = new byte[bytesRead];
                     Array.Copy(_buffer, recBuf, bytesRead);
 
-                    //PacketProtocol packet = new PacketProtocol(2048);
-                    //packet.DataReceived(recBuf);
-
-                    //  \u0003 -- end of message?
-                    //object message = Util.Deserialize(recBuf);
-
-                    // Handle the message
-                    //StringMessage stringMessage = message as StringMessage;
-                    //if (stringMessage != null)
-                    //{
-                    //    Console.WriteLine("Socket read got a string message from " + current.RemoteEndPoint.ToString() + ": " + stringMessage.Message + Environment.NewLine);
-                    //    return;
-                    //}
-
                     client.AppendBytes(recBuf);
 
                     string currentInput = Encoding.ASCII.GetString(recBuf);
-
-                    if (currentInput.Contains("\r\n")
-                        || currentInput.Contains("\n"))
+                    if (currentInput.Contains(Environment.NewLine))
                     {
-                        string fullMessage = Encoding.ASCII.GetString(client.CurrentBytesSentWithoutNewLine.ToArray());
-                        if (fullMessage.EndsWith("\r\n"))
-                        {
-                            fullMessage = fullMessage.Remove(fullMessage.Length - 2, 2);
-                        }
-                        Console.WriteLine("Received Text: " + fullMessage);
+                        InboundMessage message = new InboundMessage(client.CurrentBytesSentWithoutNewLine.ToArray());
+
+                        Console.WriteLine("Received Text: " + message.StringMessage);
 
                         client.ClearBytes();
-                        ProcessMessage(current, client, fullMessage);
+
+                        if (message.StringMessage == "/quit") // Client wants to exit gracefully
+                        {
+                            current.Send(new OutboundMessage("BYE").ToBytes());
+
+                            CloseClientConnection(client);
+
+                            Console.WriteLine("Client disconnected");
+                            return;
+                        }
+
+                        ProcessMessage(current, client, message);
                     }
 
                     //Queue the next receive
@@ -142,11 +159,7 @@
                     //Callback run but no data, close the connection
                     //supposadly means a disconnect
                     //and we still have to close the socket, even though we throw the event later
-                    current.Close();
-                    lock (clients.Select(c => c.Socket))
-                    {
-                        clients.Remove(client);
-                    }
+                    CloseClientConnection(client);
                 }
             }
             catch (SocketException e)
@@ -155,11 +168,7 @@
                 //which shouldn't have happened
                 if (current != null)
                 {
-                    current.Close();
-                    lock (clients.Select(c => c.Socket))
-                    {
-                        clients.Remove(client);
-                    }
+                    CloseClientConnection(client);
                 }
             }
             catch(ObjectDisposedException)
@@ -167,18 +176,15 @@
                 //Connected client didn't cleanly exit.
                 if (current != null)
                 {
-                    current.Close();
-                    lock (clients.Select(c => c.Socket))
-                    {
-                        clients.Remove(client);
-                    }
+                    CloseClientConnection(client);
                 }
             }
         }
 
-        private static void ProcessMessage(Socket current, Client client, string text)
+        private static void ProcessMessage(Socket current, Client client, InboundMessage message)
         {
-            text = text.ToLower();
+            string text = message.StringMessage;
+
             //ToDo: use the message class here...
             if (client.IsInChatroom)
             {
@@ -190,26 +196,22 @@
                 else
                 {
                     ChatRoom chatRoom = chatRooms.First(cr => cr.UniqueId == client.chatRoomUniqueId);
-                    byte[] message = Encoding.ASCII.GetBytes(
-                        Environment.NewLine + "<= " + client.Nickname + ": "
-                        + text + Environment.NewLine + "=>");
+
                     //ToDo: reprint all of the clients bytes so it feels like they keep typing?
-                    chatRoom.BroadCastMessage(message);
+                    chatRoom.BroadCastMessage(new OutboundMessage(client.Nickname + ": " + text).ToBytes());
                 }
             }
             else if (!client.HasNickname)
             {
                 if (clients.Any(c => c.Nickname == text))
                 {
-                    byte[] data = Encoding.ASCII.GetBytes("<= Sorry, name taken." + Environment.NewLine + "=> ");
-                    current.Send(data);
+                    current.Send(new OutboundMessage("Sorry, name taken.").ToBytes());
                     PromptForNickName(current);
                     return;
                 }
 
                 client.SetNickname(text);
-                byte[] welcomeReply = Encoding.ASCII.GetBytes("<= Welcome " + text + "!" + Environment.NewLine + "=> ");
-                current.Send(welcomeReply);
+                current.Send(new OutboundMessage("Welcome " + text + "!").ToBytes());
             }
             else if (text.ToLower() == "/rooms")
             {
@@ -238,26 +240,15 @@
                         current.Send(clientNameBytes);
                     }
 
-                    current.Send(Responses.EndOfListBytes());
+                    current.Send(OutboundMessageBuilder.EndOfListBytes().ToBytes());
                 }
                 else
                 {
-                    byte[] noSuchRoomMsg = Encoding.ASCII.GetBytes("<= Sorry, no such room.\r\n");
+                    byte[] noSuchRoomMsg = Encoding.ASCII.GetBytes("<= Sorry, no such room." + Environment.NewLine);
                     current.Send(noSuchRoomMsg);
 
                     SendActiveRoomsTo(current);
                 }
-            }
-            else if (text.ToLower() == "/quit") // Client wants to exit gracefully
-            {
-                byte[] quitMsg = Encoding.ASCII.GetBytes("<= BYE\r\n");
-                current.Send(quitMsg);
-                // Always Shutdown before closing
-                current.Shutdown(SocketShutdown.Both);
-                current.Close();
-                clients.Remove(client);
-                Console.WriteLine("Client disconnected");
-                return;
             }
             else
             {
@@ -267,90 +258,23 @@
                 SendActiveRoomsTo(current);
             }
 
-            current.BeginReceive(_buffer, 0, bufferSize, SocketFlags.None, ReceiveCallback, current);
+            current.Send(Encoding.ASCII.GetBytes("=> "));
         }
-
-        //private void ChildSocket_PacketArrived(SimpleServerChildTcpSocket socket, AsyncResultEventArgs<byte[]> e)
-        //{
-        //    try
-        //    {
-        //        // Check for errors
-        //        if (e.Error != null)
-        //        {
-        //            textBoxLog.AppendText("Client socket error during Read from " + socket.RemoteEndPoint.ToString() + ": [" + e.Error.GetType().Name + "] " + e.Error.Message + Environment.NewLine);
-        //            ResetChildSocket(socket);
-        //        }
-        //        else if (e.Result == null)
-        //        {
-        //            // PacketArrived completes with a null packet when the other side gracefully closes the connection
-        //            textBoxLog.AppendText("Socket graceful close detected from " + socket.RemoteEndPoint.ToString() + Environment.NewLine);
-
-        //            // Close the socket and remove it from the list
-        //            ResetChildSocket(socket);
-        //        }
-        //        else
-        //        {
-        //            // At this point, we know we actually got a message.
-
-        //            // Deserialize the message
-        //            object message = Messages.Util.Deserialize(e.Result);
-
-        //            // Handle the message
-        //            Messages.StringMessage stringMessage = message as Messages.StringMessage;
-        //            if (stringMessage != null)
-        //            {
-        //                textBoxLog.AppendText("Socket read got a string message from " + socket.RemoteEndPoint.ToString() + ": " + stringMessage.Message + Environment.NewLine);
-        //                return;
-        //            }
-
-        //            Messages.ComplexMessage complexMessage = message as Messages.ComplexMessage;
-        //            if (complexMessage != null)
-        //            {
-        //                textBoxLog.AppendText("Socket read got a complex message from " + socket.RemoteEndPoint.ToString() + ": (UniqueID = " + complexMessage.UniqueID.ToString() +
-        //                    ", Time = " + complexMessage.Time.ToString() + ", Message = " + complexMessage.Message + ")" + Environment.NewLine);
-        //                return;
-        //            }
-
-        //            textBoxLog.AppendText("Socket read got an unknown message from " + socket.RemoteEndPoint.ToString() + " of type " + message.GetType().Name + Environment.NewLine);
-        //        }
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        textBoxLog.AppendText("Error reading from socket " + socket.RemoteEndPoint.ToString() + ": [" + ex.GetType().Name + "] " + ex.Message + Environment.NewLine);
-        //        ResetChildSocket(socket);
-        //    }
-        //    finally
-        //    {
-        //        RefreshDisplay();
-        //    }
-        //}
 
         public static void SendActiveRoomsTo(Socket clientSocket)
         {
-            byte[] activeChatRoomBytes = Encoding.ASCII.GetBytes("<= Active rooms are:\r\n");
+            byte[] activeChatRoomBytes = Encoding.ASCII.GetBytes("<= Active rooms are:" + Environment.NewLine);
             clientSocket.Send(activeChatRoomBytes);
 
             foreach (ChatRoom chatRoom in chatRooms)
             {
-                byte[] chatRoomNameBytes = Encoding.ASCII.GetBytes(
+                OutboundMessage message = new OutboundMessage(
                     "<= * " + chatRoom.Name 
-                    + " (" + chatRoom.Clients.Count + ")" + "\r\n");
-                clientSocket.Send(chatRoomNameBytes);
+                    + " (" + chatRoom.Clients.Count + ")");
+                clientSocket.Send(message.ToBytes());
             }
 
-            clientSocket.Send(Responses.EndOfListBytes());
-        }
-
-        public static void SendData(IAsyncResult asyncResult)
-        {
-            try
-            {
-                _serverSocket.EndSend(asyncResult);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("SendData Error: " + ex.Message);
-            }
+            clientSocket.Send(OutboundMessageBuilder.EndOfListBytes().ToBytes());
         }
     }
 }

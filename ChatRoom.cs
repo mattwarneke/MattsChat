@@ -22,7 +22,7 @@ namespace MattsChat
         public void ClientJoin(Client client)
         {
             //broadcast entry before client joins, so we don't have to exclude them
-            this.BroadCastMessage(Responses.NewClientEntersRoomMsg(client));
+            this.BroadCastMessage(OutboundMessageBuilder.NewClientEntersRoomMsg(client).ToBytes());
 
             this.Clients.Add(client);
         }
@@ -32,17 +32,31 @@ namespace MattsChat
             //remove client first so we can tailor message
             this.Clients.Remove(client);
 
-            this.BroadCastMessage(Responses.GetResponseBytes(" * user has left chat: " + client.Nickname));
+            client.LeaveChatroom();
 
-            byte[] clientMsg = Encoding.ASCII.GetBytes("<= * user has left chat: " + client.Nickname + " (** this is you)/r/n");
-            client.Socket.Send(clientMsg);
+            this.BroadCastMessage(new OutboundMessage(
+                " * user has left chat: " + client.Nickname).ToBytes());
+
+            lock (client.Socket)
+            {
+                //we use a blocking mode send, no async on the outgoing
+                //since this is primarily a multithreaded application, shouldn't cause problems to send in blocking mode
+                client.Socket.Send(new OutboundMessage(
+                    "* user has left chat: " + client.Nickname + " (** this is you)").ToBytes());
+            }
         }
 
         public void BroadCastMessage(byte[] byteMsg)
         {
             foreach (Client receiver in this.Clients)
             {
-                receiver.Socket.Send(byteMsg);
+                lock (receiver.Socket)
+                {
+                    //we use a blocking mode send, no async on the outgoing
+                    //since this is primarily a multithreaded application, shouldn't cause problems to send in blocking mode
+                    receiver.Socket.Send(byteMsg);
+                }
+                
             }
         }
     }
