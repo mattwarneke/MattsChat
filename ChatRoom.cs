@@ -4,6 +4,8 @@ using System.Text;
 
 namespace MattsChat
 {
+    using System.Net.Sockets;
+
     class ChatRoom
     {
         public ChatRoom(string name)
@@ -34,15 +36,23 @@ namespace MattsChat
 
             client.LeaveChatroom();
 
-            this.BroadCastMessage(new OutboundMessage(
-                " * user has left chat: " + client.Nickname).ToBytes());
-
-            lock (client.Socket)
+            try
             {
-                //we use a blocking mode send, no async on the outgoing
-                //since this is primarily a multithreaded application, shouldn't cause problems to send in blocking mode
-                client.Socket.Send(new OutboundMessage(
-                    "* user has left chat: " + client.Nickname + " (** this is you)").ToBytes());
+                this.BroadCastMessage(new OutboundMessage(
+                    " * user has left chat: " + client.Nickname).ToBytes());
+
+                lock (client.Socket)
+                {
+                    //we use a blocking mode send, no async on the outgoing
+                    //since this is primarily a multithreaded application, shouldn't cause problems to send in blocking mode
+                    client.Socket.Send(new OutboundMessage(
+                        "* user has left chat: " + client.Nickname + " (** this is you)").ToBytes());
+                }
+            }
+            catch (SocketException)
+            {
+                //Something went horribly wrong
+                return;
             }
         }
 

@@ -21,7 +21,7 @@
         {
             Console.Title = "Server";
             SetupServer();
-            Console.ReadLine(); // When we press enter close everything
+            Console.ReadLine(); // keep app open until read an enter
             CloseAllSockets();
         }
 
@@ -57,19 +57,34 @@
 
         private static void CloseClientConnection(Client client)
         {
+            Console.WriteLine("close connection " + client.Nickname);
+            if (!client.Socket.Connected
+                || !clients.Contains(client))
+            {
+                return;
+            }
+
+            Console.WriteLine("client in list");
+            Console.WriteLine("clinet socket is not null");
+
+            ChatRoom chatRoom = chatRooms.FirstOrDefault(cr => cr.UniqueId == client.chatRoomUniqueId);
+            if (chatRoom != null)
+            {
+                Console.WriteLine("client in chatroom");
+                chatRoom.ClientLeave(client);
+
+            }
+            clients.Remove(client);
+
             lock (client.Socket)
             {
-                ChatRoom chatRoom = chatRooms.FirstOrDefault(cr => cr.UniqueId == client.chatRoomUniqueId);
-                if (chatRoom != null)
-                {
-                    chatRoom.ClientLeave(client);
-                }
-                clients.Remove(client);
-
+                Console.WriteLine("client shutdown");
                 // Always Shutdown before closing
                 client.Socket.Shutdown(SocketShutdown.Both);
                 client.Socket.Close();
             }
+
+            Console.WriteLine("reached the end");
         }
 
         private static void AcceptCallback(IAsyncResult AR)
@@ -85,41 +100,26 @@
                 return;
             }
 
-            clients.Add(new Client(newSocket));
+            Client newClient = new Client(newSocket);
+            clients.Add(newClient);
 
             newSocket.Send(OutboundMessageBuilder.WelcomeMessage().ToBytes());
 
-            PromptForNickName(newSocket);
+            PromptForNickname(newSocket);
 
-            newSocket.BeginReceive(_buffer, 0, bufferSize, SocketFlags.None, ReceiveCallback, newSocket);
+            newSocket.BeginReceive(_buffer, 0, bufferSize, SocketFlags.None, ReceiveCallback, newClient);
 
             _serverSocket.BeginAccept(AcceptCallback, null);
         }
 
-        private static void PromptForNickName(Socket newSocket)
-        {
-            byte[] data2 = Encoding.ASCII.GetBytes("<= Login Name?\r\n=> ");
-            newSocket.Send(data2);
-        }
-
         private static void ReceiveCallback(IAsyncResult AR)
         {
-            var current = (Socket)AR.AsyncState;
-            Client client = clients.FirstOrDefault(c => c.Socket.Equals(current));
-
-            if (client == null)
-            {
-                //Callback run but no data, close the connection
-                //supposadly means a disconnect
-                //and we still have to close the socket, even though we throw the event later
-                current.Close();
-                return;
-            }
+            Client client = (Client)AR.AsyncState;
 
             try
             {
                 //Grab our buffer and count the number of bytes receives
-                int bytesRead = current.EndReceive(AR);
+                int bytesRead = client.Socket.EndReceive(AR);
 
                 //make sure we've read something, if we haven't it means that the client disconnected
                 if (bytesRead > 0)
@@ -129,8 +129,7 @@
 
                     client.AppendBytes(recBuf);
 
-                    string currentInput = Encoding.ASCII.GetString(recBuf);
-                    if (currentInput.Contains(Environment.NewLine))
+                    if (recBuf.Contains((byte)10))//newline
                     {
                         InboundMessage message = new InboundMessage(client.CurrentBytesSentWithoutNewLine.ToArray());
 
@@ -140,7 +139,7 @@
 
                         if (message.StringMessage == "/quit") // Client wants to exit gracefully
                         {
-                            current.Send(new OutboundMessage("BYE").ToBytes());
+                            client.Socket.Send(new OutboundMessage("BYE").ToBytes());
 
                             CloseClientConnection(client);
 
@@ -148,25 +147,23 @@
                             return;
                         }
 
-                        ProcessMessage(current, client, message);
+                        ProcessMessage(client, message);
                     }
 
                     //Queue the next receive
-                    current.BeginReceive(_buffer, 0, _buffer.Length, SocketFlags.None, ReceiveCallback, current);
+                    client.Socket.BeginReceive(_buffer, 0, _buffer.Length, SocketFlags.None, ReceiveCallback, client);
                 }
                 else
                 {
-                    //Callback run but no data, close the connection
-                    //supposadly means a disconnect
-                    //and we still have to close the socket, even though we throw the event later
+                    //Callback run but no data, close the connection - TIMEOUT
+                    Console.WriteLine("Timeout: " + client.Nickname);
                     CloseClientConnection(client);
                 }
             }
             catch (SocketException e)
             {
-                //Something went terribly wrong
-                //which shouldn't have happened
-                if (current != null)
+                //Something went terribly wrong, which shouldn't have happened
+                if (client != null)
                 {
                     CloseClientConnection(client);
                 }
@@ -174,14 +171,14 @@
             catch(ObjectDisposedException)
             {
                 //Connected client didn't cleanly exit.
-                if (current != null)
+                if (client != null)
                 {
                     CloseClientConnection(client);
                 }
             }
         }
 
-        private static void ProcessMessage(Socket current, Client client, InboundMessage message)
+        private static void ProcessMessage(Client client, InboundMessage message)
         {
             string text = message.StringMessage;
 
@@ -190,91 +187,106 @@
             {
                 if (text.Equals("/leave"))
                 {
-                    ChatRoom chatRoom = chatRooms.First(cr => cr.UniqueId == client.chatRoomUniqueId);
-                    chatRoom.ClientLeave(client);
+                    ChatRoom chatRoom = chatRooms.FirstOrDefault(cr => cr.UniqueId == client.chatRoomUniqueId);
+                    if (chatRoom != null)
+                    {
+                        chatRoom.ClientLeave(client);
+                    }
                 }
                 else
-                {
-                    ChatRoom chatRoom = chatRooms.First(cr => cr.UniqueId == client.chatRoomUniqueId);
-
-                    //ToDo: reprint all of the clients bytes so it feels like they keep typing?
-                    chatRoom.BroadCastMessage(new OutboundMessage(client.Nickname + ": " + text).ToBytes());
+                {//chatroom broadcast - chat area
+                    ChatRoom chatRoom = chatRooms.FirstOrDefault(cr => cr.UniqueId == client.chatRoomUniqueId);
+                    if (chatRoom != null)
+                    {
+                        chatRoom.BroadCastMessage(new OutboundMessage(client.Nickname + ": " + text).ToBytes());
+                    }
                 }
             }
             else if (!client.HasNickname)
             {
                 if (clients.Any(c => c.Nickname == text))
                 {
-                    current.Send(new OutboundMessage("Sorry, name taken.").ToBytes());
-                    PromptForNickName(current);
+                    client.Socket.Send(new OutboundMessage("Sorry, name taken.").ToBytes());
+                    PromptForNickname(client.Socket);
                     return;
                 }
 
                 client.SetNickname(text);
-                current.Send(new OutboundMessage("Welcome " + text + "!").ToBytes());
+                client.Socket.Send(new OutboundMessage("Welcome " + text + "!").ToBytes());
             }
-            else if (text.ToLower() == "/rooms")
+            else if (text == "/rooms")
             {
-                SendActiveRoomsTo(current);
+                SendActiveRoomsTo(client.Socket);
             }
-            else if (text.ToLower().StartsWith("/join "))
+            else if (text.StartsWith("/join "))
             {
                 string roomName = text.ToLower().Replace("/join ", "");
                 ChatRoom chatroomToEnter = chatRooms.FirstOrDefault(cr => cr.Name.Equals(roomName));
                 if (chatroomToEnter != null)
                 {
-                    byte[] enteringRoomBytes = Encoding.ASCII.GetBytes("<= entering room: " + chatroomToEnter.Name + Environment.NewLine);
-                    current.Send(enteringRoomBytes);
-
+                    client.Socket.Send(new OutboundMessage("entering room: " + chatroomToEnter.Name).ToBytes());
                     chatroomToEnter.ClientJoin(client);
-
                     client.EnterChatroom(chatroomToEnter.UniqueId);
 
                     foreach (Client chatroomClient in chatroomToEnter.Clients)
                     {
                         string clientNameStr = 
                             client.Equals(chatroomClient)
-                            ? "<= * " + client.Nickname + "(** this is you)" + Environment.NewLine
-                            : "<= * " + client.Nickname + Environment.NewLine;
-                        byte[] clientNameBytes = Encoding.ASCII.GetBytes(clientNameStr);
-                        current.Send(clientNameBytes);
+                            ? "* " + chatroomClient.Nickname + "(** this is you)"
+                            : "* " + chatroomClient.Nickname;
+                        client.Socket.Send(new OutboundMessage(clientNameStr).ToBytes());
                     }
 
-                    current.Send(OutboundMessageBuilder.EndOfListBytes().ToBytes());
+                    client.Socket.Send(OutboundMessageBuilder.EndOfListBytes().ToBytes());
                 }
                 else
                 {
-                    byte[] noSuchRoomMsg = Encoding.ASCII.GetBytes("<= Sorry, no such room." + Environment.NewLine);
-                    current.Send(noSuchRoomMsg);
-
-                    SendActiveRoomsTo(current);
+                    client.Socket.Send(new OutboundMessage("Sorry, no such room.").ToBytes());
+                    SendActiveRoomsTo(client.Socket);
                 }
             }
             else
             {
-                byte[] noSuchCommandMsg = Encoding.ASCII.GetBytes("<= Invalid command, join a chatroom to start chatting!\r\n");
-                current.Send(noSuchCommandMsg);
+                client.Socket.Send(new OutboundMessage("Invalid command, join a chatroom to start chatting!").ToBytes());
 
-                SendActiveRoomsTo(current);
+                SendActiveRoomsTo(client.Socket);
             }
 
-            current.Send(Encoding.ASCII.GetBytes("=> "));
+            SendClientInputPrompt(client.Socket);
+        }
+
+        private static void PromptForNickname(Socket clientSocket)
+        {
+            clientSocket.Send(new OutboundMessage("Login Name?").ToBytes());
+            SendClientInputPrompt(clientSocket);
+        }
+
+        private static void SendClientInputPrompt(Socket clientSocket)
+        {
+            clientSocket.Send(Encoding.ASCII.GetBytes("=> "));
         }
 
         public static void SendActiveRoomsTo(Socket clientSocket)
         {
-            byte[] activeChatRoomBytes = Encoding.ASCII.GetBytes("<= Active rooms are:" + Environment.NewLine);
-            clientSocket.Send(activeChatRoomBytes);
-
-            foreach (ChatRoom chatRoom in chatRooms)
+            try
             {
-                OutboundMessage message = new OutboundMessage(
-                    "<= * " + chatRoom.Name 
-                    + " (" + chatRoom.Clients.Count + ")");
-                clientSocket.Send(message.ToBytes());
-            }
+                clientSocket.Send(new OutboundMessage("Active rooms are:").ToBytes());
 
-            clientSocket.Send(OutboundMessageBuilder.EndOfListBytes().ToBytes());
+                foreach (ChatRoom chatRoom in chatRooms)
+                {
+                    OutboundMessage message = new OutboundMessage(
+                        "* " + chatRoom.Name + " (" + chatRoom.Clients.Count + ")");
+                    clientSocket.Send(message.ToBytes());
+                }
+
+                clientSocket.Send(OutboundMessageBuilder.EndOfListBytes().ToBytes());
+                clientSocket.Send(new OutboundMessage("type: /join [chatroomname]").ToBytes());
+            }
+            catch (SocketException)
+            {
+                return;
+                throw;
+            }
         }
     }
 }
