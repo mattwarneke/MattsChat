@@ -4,6 +4,7 @@ using System.Text;
 
 namespace MattsChat
 {
+    using System.Linq;
     using System.Net.Sockets;
 
     class ChatRoom
@@ -62,9 +63,17 @@ namespace MattsChat
             {
                 lock (receiver.Socket)
                 {
-                    //we use a blocking mode send, no async on the outgoing
-                    //since this is primarily a multithreaded application, shouldn't cause problems to send in blocking mode
+                    //clear the users current input and print
+                    //this will keep the chat feeling async and easier to read
+                    receiver.Socket.Send(Encoding.ASCII.GetBytes("\x1b[2K"));//clear line
+                    receiver.Socket.Send(Encoding.ASCII.GetBytes("\r"));//move cursor to start of line
+                    
                     receiver.Socket.Send(byteMsg);
+
+                    char soundNotification = (char)7;//makes a sound letting user know chatroom has new dialog
+                    //reprint the users input
+                    receiver.Socket.Send(Encoding.ASCII.GetBytes(soundNotification + "\r=> "));
+                    receiver.Socket.Send(receiver.CurrentBytesSentWithoutNewLine.ToArray());
                 }
                 
             }

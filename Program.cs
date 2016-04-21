@@ -199,6 +199,7 @@
                     if (chatRoom != null)
                     {
                         chatRoom.BroadCastMessage(new OutboundMessage(client.Nickname + ": " + text).ToBytes());
+                        return;//input prompt is dealt with above
                     }
                 }
             }
