@@ -214,6 +214,7 @@
 
                 client.SetNickname(text);
                 client.Socket.Send(new OutboundMessage("Welcome " + text + "!").ToBytes());
+                client.Socket.Send(new OutboundMessage("To see available chatrooms type: /rooms").ToBytes());
             }
             else if (text == "/rooms")
             {

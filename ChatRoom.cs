@@ -40,7 +40,7 @@ namespace MattsChat
             try
             {
                 this.BroadCastMessage(new OutboundMessage(
-                    " * user has left chat: " + client.Nickname).ToBytes());
+                    "* user has left chat: " + client.Nickname).ToBytes());
 
                 lock (client.Socket)
                 {
