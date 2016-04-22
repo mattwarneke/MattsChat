@@ -64,13 +64,9 @@
                 return;
             }
 
-            Console.WriteLine("client in list");
-            Console.WriteLine("clinet socket is not null");
-
             ChatRoom chatRoom = chatRooms.FirstOrDefault(cr => cr.UniqueId == client.chatRoomUniqueId);
             if (chatRoom != null)
             {
-                Console.WriteLine("client in chatroom");
                 chatRoom.ClientLeave(client);
 
             }
@@ -78,13 +74,10 @@
 
             lock (client.Socket)
             {
-                Console.WriteLine("client shutdown");
                 // Always Shutdown before closing
                 client.Socket.Shutdown(SocketShutdown.Both);
                 client.Socket.Close();
             }
-
-            Console.WriteLine("reached the end");
         }
 
         private static void AcceptCallback(IAsyncResult AR)
@@ -103,7 +96,7 @@
             Client newClient = new Client(newSocket);
             clients.Add(newClient);
 
-            newSocket.Send(OutboundMessageBuilder.WelcomeMessage().ToBytes());
+            newSocket.Send(new OutboundMessage("Welcome to the matts chat server").ToBytes());
 
             PromptForNickname(newSocket);
 
@@ -239,7 +232,8 @@
                         client.Socket.Send(new OutboundMessage(clientNameStr).ToBytes());
                     }
 
-                    client.Socket.Send(OutboundMessageBuilder.EndOfListBytes().ToBytes());
+                    client.Socket.Send(new OutboundMessage("end of list.").ToBytes());
+                    client.Socket.Send(new OutboundMessage("To leave type: /leave").ToBytes());
                 }
                 else
                 {
@@ -281,7 +275,7 @@
                     clientSocket.Send(message.ToBytes());
                 }
 
-                clientSocket.Send(OutboundMessageBuilder.EndOfListBytes().ToBytes());
+                clientSocket.Send(new OutboundMessage("end of list.").ToBytes());
                 clientSocket.Send(new OutboundMessage("type: /join [chatroomname]").ToBytes());
             }
             catch (SocketException)

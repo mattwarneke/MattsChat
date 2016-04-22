@@ -25,7 +25,7 @@ namespace MattsChat
         public void ClientJoin(Client client)
         {
             //broadcast entry before client joins, so we don't have to exclude them
-            this.BroadCastMessage(OutboundMessageBuilder.NewClientEntersRoomMsg(client).ToBytes());
+            this.BroadCastMessage(new OutboundMessage("* new user joined chat: " + client.Nickname).ToBytes());
 
             this.Clients.Add(client);
         }

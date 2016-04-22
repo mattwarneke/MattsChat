@@ -21,22 +21,4 @@ namespace MattsChat
             return Encoding.ASCII.GetBytes(this.Message);
         }
     }
-
-    public static class OutboundMessageBuilder
-    {
-        public static OutboundMessage NewClientEntersRoomMsg(Client client)
-        {
-            return new OutboundMessage("* new user joined chat: " + client.Nickname);
-        }
-
-        public static OutboundMessage EndOfListBytes()
-        {
-            return new OutboundMessage("end of list.");
-        }
-
-        public static OutboundMessage WelcomeMessage()
-        {
-            return new OutboundMessage("Welcome to the matts chat server");
-        }
-    }
 }
