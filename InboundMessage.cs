@@ -24,8 +24,6 @@ namespace MattsChat
 
             this.StringMessage = new string(characterArray);
 
-            this.StringMessage = this.StringMessage.ToLower();
-
             if (this.StringMessage.EndsWith(Environment.NewLine))
             {
                 this.StringMessage = this.StringMessage.Remove(this.StringMessage.Length - 2, 2);
