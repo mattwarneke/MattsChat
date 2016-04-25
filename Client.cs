@@ -1,35 +1,57 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace MattsChat
+﻿namespace MattsChat
 {
-    using System.Dynamic;
-    using System.Net.Sockets;
+    using System;
+    using System.Collections.Generic;
+    using System.Linq;
+    using System.Text;
 
-    public class Client
+    public interface IClient
     {
-        public Client(Socket socket)
-        {
-            this.Socket = socket;
-            this.CurrentBytesSentWithoutNewLine = new List<byte>();
-            this.chatRoomUniqueId = Guid.Empty;
-        }
+        void Send(OutboundMessage message);
 
-        //TODO: Client terminal type
-        public Socket Socket { get; private set; }
+        void Send(byte[] message);
+
+        void Listen();
+
+        string Nickname { get; }
+
+        bool HasNickname { get; }
+
+        void SetNickname(string nickName);
+
+        bool IsInChatroom { get; }
+
+        Guid ChatRoomUniqueId { get; }
+
+        void EnterChatroom(Guid chatroomUniqueId);
+
+        void LeaveChatroom();
+
+        void Disconnect();
+
+        List<byte> CurrentBytesSentWithoutNewLine { get; }
+
+        void AppendBytes(byte[] bytesToAppend);
+
+        void ClearBytes();
+    }
+
+    public abstract class Baseclient : IClient
+    {
+        public Baseclient()
+        {
+            this.ChatRoomUniqueId = Guid.Empty;
+            this.CurrentBytesSentWithoutNewLine = new List<byte>();
+        }
 
         public string Nickname { get; private set; }
 
-        public List<byte> CurrentBytesSentWithoutNewLine { get; private set; }
+        public Guid ChatRoomUniqueId { get; private set; }
 
-        public Guid chatRoomUniqueId { get; private set; }
+        public List<byte> CurrentBytesSentWithoutNewLine { get; private set; } 
 
         public void SetNickname(string nickName)
         {
-            //ToDo: Alphanumberic only
             this.Nickname = nickName;
         }
 
@@ -45,7 +67,7 @@ namespace MattsChat
         {
             get
             {
-                return !chatRoomUniqueId.Equals(Guid.Empty);
+                return !this.ChatRoomUniqueId.Equals(Guid.Empty);
             }
         }
 
@@ -61,12 +83,32 @@ namespace MattsChat
 
         public void EnterChatroom(Guid chatroomUniqueId)
         {
-            this.chatRoomUniqueId = chatroomUniqueId;
+            this.ChatRoomUniqueId = chatroomUniqueId;
         }
 
         public void LeaveChatroom()
         {
-            this.chatRoomUniqueId = Guid.Empty;
+            this.ChatRoomUniqueId = Guid.Empty;
+        }
+
+        public virtual void Send(OutboundMessage message)
+        {
+            throw new NotImplementedException();
+        }
+
+        public virtual void Send(byte[] message)
+        {
+            throw new NotImplementedException();
+        }
+
+        public virtual void Listen()
+        {
+            throw new NotImplementedException();
+        }
+
+        public virtual void Disconnect()
+        {
+            throw new NotImplementedException();
         }
     }
 }

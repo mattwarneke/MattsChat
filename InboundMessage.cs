@@ -1,11 +1,6 @@
-﻿using System;
-using System.IO;
-using System.Runtime.Serialization.Formatters.Binary;
-
-// This file contains all messages defined that are passed back and forth between the client and the server.
-// For this test project, only two messages are defined.
-namespace MattsChat
+﻿namespace MattsChat
 {
+    using System;
     using System.Linq;
     using System.Text;
 

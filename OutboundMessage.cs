@@ -1,11 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace MattsChat
+﻿namespace MattsChat
 {
+    using System;
+    using System.Text;
+
     public class OutboundMessage
     {
         public OutboundMessage(string msg)
@@ -19,6 +16,11 @@ namespace MattsChat
         public byte[] ToBytes()
         {
             return Encoding.ASCII.GetBytes(this.Message);
+        }
+
+        public void AddHeader(string header)
+        {
+            this.Message = header + this.Message;
         }
     }
 }
