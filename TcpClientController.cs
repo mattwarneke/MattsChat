@@ -11,7 +11,6 @@
         private const int BufferSize = 2048;
         private const int Port = 443;
         private readonly Socket _serverSocket;
-        private readonly List<IClient> Clients = new List<IClient>();
         private readonly byte[] Buffer = new byte[BufferSize];
         private ClientService ClientService { get; set; }
 
@@ -36,7 +35,7 @@
         /// </summary>
         public void CloseAllSockets()
         {
-            List<TcpClient> iClients = Clients.OfType<TcpClient>().ToList();
+            List<TcpClient> iClients = this.ClientService.GetTcpClients();
             foreach (Socket socket in iClients.Select(c => c.Socket))
             {
                 socket.Shutdown(SocketShutdown.Both);

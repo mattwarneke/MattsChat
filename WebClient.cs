@@ -2,21 +2,30 @@
 {
     using System;
     using System.Net.WebSockets;
+    using System.Text;
     using System.Threading;
 
     public class WebClient : Baseclient
     {
-        public WebClient(ClientWebSocket socket)
+        public WebClient(WebSocket socket)
         {
             this.Socket = socket;
         }
 
-        public ClientWebSocket Socket {  get; private set; }
+        public WebSocket Socket {  get; private set; }
 
-        public new void Send(OutboundMessage message)
+        public override void Send(byte[] message)
+        {
+            ArraySegment<byte> buffer = new ArraySegment<byte>(message);
+
+            Socket.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None); 
+        }
+
+        public override void Send(OutboundMessage message)
         {
             ArraySegment<byte> buffer = new ArraySegment<byte>(message.ToBytes());
-            this.Socket.SendAsync(buffer, WebSocketMessageType.Binary, true, new CancellationToken(false));
+
+            Socket.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);  
         }
     }
 }

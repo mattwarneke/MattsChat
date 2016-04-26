@@ -63,17 +63,24 @@ namespace MattsChat
             {
                 lock (receiver)
                 {
+                    bool isTcpClient = receiver is TcpClient;
                     //clear the users current input and print
                     //this will keep the chat feeling async and easier to read
-                    receiver.Send(Encoding.ASCII.GetBytes("\x1b[2K"));//clear line
-                    receiver.Send(Encoding.ASCII.GetBytes("\r"));//move cursor to start of line
-                    
+                    if (isTcpClient)
+                    {
+                        receiver.Send(Encoding.ASCII.GetBytes("\x1b[2K"));//clear line
+                        receiver.Send(Encoding.ASCII.GetBytes("\r"));//move cursor to start of line
+                    }
+
                     receiver.Send(byteMsg);
 
-                    char soundNotification = (char)7;//makes a sound letting user know chatroom has new dialog
-                    //reprint the users input
-                    receiver.Send(Encoding.ASCII.GetBytes(soundNotification + "\r=> "));
-                    receiver.Send(receiver.CurrentBytesSentWithoutNewLine.ToArray());
+                    if (isTcpClient)
+                    {
+                        char soundNotification = (char)7;//makes a sound letting user know chatroom has new dialog
+                        //reprint the users input
+                        receiver.Send(Encoding.ASCII.GetBytes(soundNotification + "\r=> "));
+                        receiver.Send(receiver.CurrentBytesSentWithoutNewLine.ToArray());
+                    }
                 }
                 
             }

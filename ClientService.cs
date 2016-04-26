@@ -153,5 +153,15 @@
         {
             this.Clients.Remove(client);
         }
+
+        public List<TcpClient> GetTcpClients()
+        {
+            return this.Clients.OfType<TcpClient>().ToList();
+        }
+
+        public List<WebClient> GetWebClients()
+        {
+            return this.Clients.OfType<WebClient>().ToList();
+        } 
     }
 }
