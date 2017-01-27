@@ -20,9 +20,6 @@ namespace MattsChat
     public class WebClientController
     {
         private const int BufferSize = 2048;
-        private const int Port = 443;
-        private TcpListener server;
-        private readonly byte[] Buffer = new byte[BufferSize];
         private ClientService ClientService { get; set; }
 
         public WebClientController(ClientService clientService)
@@ -73,6 +70,8 @@ namespace MattsChat
             WebSocket webSocket = webSocketContext.WebSocket;
 
             IClient newClient = new WebClient(webSocket);
+            newClient.ClearBytes();
+
             this.ClientService.AddClient(newClient);
 
             newClient.Send(new OutboundMessage("Welcome to the matts chat server"));
@@ -88,19 +87,31 @@ namespace MattsChat
             
             try
             {
-                byte[] bufferArray = new byte[1024];
-                ArraySegment<byte> receiveBuffer = new ArraySegment<byte>(bufferArray);
+                byte[] byteBuffer = new byte[BufferSize];
+                ArraySegment<byte> receiveBuffer = new ArraySegment<byte>(byteBuffer);
 
                 if (webSocket.State == WebSocketState.Open)
                 {
-                    WebSocketReceiveResult receiveResult = await webSocket.ReceiveAsync(receiveBuffer, CancellationToken.None);
-
-                    if (receiveBuffer.Any())
+                    WebSocketReceiveResult receiveResult;
+                    try
                     {
-                        
-                        client.AppendBytes(receiveBuffer.Array.Where(b => !b.Equals((byte)0)).ToArray());
+                        //CancellationTokenSource ct = new CancellationTokenSource(10000);
+                        //CancellationToken token = ct.Token;
+                        receiveResult = await webSocket.ReceiveAsync(receiveBuffer, CancellationToken.None);
+                    }
+                    catch (Exception)
+                    {
+                        this.Listen(client);
+                        return;
+                    }
+                    
+                    if (!receiveBuffer.Any())
+                    {
+                        this.Listen(client);
                     }
 
+                    client.AppendBytes(receiveBuffer.Array.Where(b => !b.Equals((byte)0)).ToArray());
+                    
                     if (receiveResult.EndOfMessage == false)
                     {
                         this.Listen(client);
@@ -110,6 +121,8 @@ namespace MattsChat
                     InboundMessage message = new InboundMessage(client.CurrentBytesSentWithoutNewLine.ToArray());
 
                     client.ClearBytes();
+
+                    Console.WriteLine("WEB Text: " + message.StringMessage);
 
                     if (message.StringMessage == "/quit") // Client wants to exit gracefully
                     {
@@ -126,40 +139,30 @@ namespace MattsChat
             catch(Exception e)
             {
                 Console.WriteLine("Exception: {0}", e);
+
+                this.CloseClientConnection(client);
+
                 if (webSocket != null)
                     webSocket.Dispose();
             }
-            //finally
-            //{
-            //    if (webSocket != null)
-            //        webSocket.Dispose();
-            //}
         }
 
         public void CloseAllSockets()
         {
             List<WebClient> clients = this.ClientService.GetWebClients();
-            foreach(WebSocket socket in clients.Select(c => c.Socket))
+            foreach(WebClient client in clients)
             {
-                socket.CloseAsync(WebSocketCloseStatus.Empty, string.Empty, CancellationToken.None);
+                this.CloseClientConnection(client);
             }
         }
 
-        private void CloseClientConnection(IClient client)
+        private void CloseClientConnection(WebClient client)
         {
-            Console.WriteLine("close connection " + client.Nickname);
+            Console.WriteLine("WEB close connection " + client.Nickname);
             this.ClientService.LeaveChatRoom(client);
             this.ClientService.DisconnectClient(client);
 
             client.Disconnect();
-        }
-    }
-
-    public static class HelperExtensions
-    {        
-        public static Task GetContextAsync(this HttpListener listener)
-        {
-            return Task.Factory.FromAsync<HttpListenerContext>(listener.BeginGetContext, listener.EndGetContext, TaskCreationOptions.None);
         }
     }
 }

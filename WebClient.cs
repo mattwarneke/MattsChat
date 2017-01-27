@@ -27,5 +27,17 @@
 
             Socket.SendAsync(buffer, WebSocketMessageType.Text, true, CancellationToken.None);  
         }
+
+        public override void Disconnect()
+        {
+            if (this.Socket.State != WebSocketState.Open)
+            {
+                return;
+            }
+
+            this.Socket.CloseAsync(WebSocketCloseStatus.Empty, string.Empty, CancellationToken.None);
+
+            this.Socket.Dispose();
+        }
     }
 }

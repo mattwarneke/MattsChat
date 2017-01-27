@@ -48,26 +48,47 @@
         private void AcceptCallback(IAsyncResult AR)
         {
             Socket newSocket;
+            TcpClient newClient = null;
 
             try
             {
                 newSocket = this._serverSocket.EndAccept(AR);
+                newClient = new TcpClient(newSocket);
+                this.ClientService.AddClient(newClient);
+
+                Console.WriteLine("TCP Connected: " + newSocket.RemoteEndPoint);
+
+                newClient.Send(new OutboundMessage("Welcome to the matts chat server"));
+
+                this.ClientService.PromptForNickname(newClient);
+
+                newSocket.BeginReceive(Buffer, 0, BufferSize, SocketFlags.None, this.Listen, newClient);
+
+                this._serverSocket.BeginAccept(AcceptCallback, null);
             }
             catch (ObjectDisposedException) // I cannot seem to avoid this (on exit when properly closing sockets)
             {
+                if (newClient != null)
+                {
+                    this.CloseClientConnection(newClient);
+                }
                 return;
             }
-
-            TcpClient newClient = new TcpClient(newSocket);
-            this.ClientService.AddClient(newClient);
-
-            newClient.Send(new OutboundMessage("Welcome to the matts chat server"));
-
-            this.ClientService.PromptForNickname(newClient);
-
-            newSocket.BeginReceive(Buffer, 0, BufferSize, SocketFlags.None, this.Listen, newClient);
-
-            this._serverSocket.BeginAccept(AcceptCallback, null);
+            catch(SocketException)
+            {
+                if (newClient != null)
+                {
+                    this.CloseClientConnection(newClient);
+                }
+                return;
+            }
+            catch(Exception)
+            {
+                if (newClient != null)
+                {
+                    this.CloseClientConnection(newClient);
+                }
+            }
         }
 
         private void Listen(IAsyncResult AR)
@@ -91,13 +112,13 @@
                     if (recBuf.Contains((byte)10))//newline
                     {
                         InboundMessage message = new InboundMessage(client.CurrentBytesSentWithoutNewLine.ToArray());
-                        Console.WriteLine("Received Text: " + message.StringMessage);
+                        Console.WriteLine("TCP Text: " + message.StringMessage);
                         client.ClearBytes();
 
                         if (message.StringMessage == "/quit") // Client wants to exit gracefully
                         {
                             client.Send(new OutboundMessage("BYE"));
-                            CloseClientConnection(client);
+                            this.CloseClientConnection(client);
                             return;
                         }
 
@@ -110,7 +131,7 @@
                 else
                 {
                     //Callback run but no data, close the connection - TIMEOUT
-                    Console.WriteLine("Timeout: " + client.Nickname);
+                    Console.WriteLine("TCP Timeout: " + client.Nickname);
                     this.CloseClientConnection(client);
                 }
             }
@@ -127,7 +148,7 @@
 
         private void CloseClientConnection(IClient client)
         {
-            Console.WriteLine("close connection " + client.Nickname);
+            Console.WriteLine("TCP close connection " + client.Nickname);
             this.ClientService.LeaveChatRoom(client);
             this.ClientService.DisconnectClient(client);
 
